@@ -2,82 +2,63 @@ require "json"
 require "colorize"
 require "option_parser"
 
+require "./login"
+require "./split"
+
 module Cvtxt
-  extend self
+  cvuser = Login.read_cvuser
 
-  CVUSER_FILE = "cvuser.txt"
-  COOKIE_FILE = "cookie.txt"
+  login_user = false
+  check_login = false
 
-  def extract_uname(json : String)
-    NamedTuple(props: NamedTuple(uname: String)).from_json(json)[:props][:uname]
-  end
+  split_text = false
+  files_to_split = [] of String
 
-  def login_user(email = nil, upass = nil) : String
-    puts "Đăng nhập Chivi".colorize.cyan
+  SPLITTER = Split.new
 
-    while !email
-      print "Email: "
-      email = gets.try(&.strip)
+  OptionParser.parse(ARGV) do |parser|
+    parser.on("login", "Đăng nhập") do
+      login_user = true
+      parser.banner = "Usage: cvtxt login"
     end
 
-    while !upass
-      print "Password: "
-      upass = gets.try(&.strip)
+    parser.on("check", "Kiểm tra thông tin đăng nhập") do
+      check_login = true
+      parser.banner = "Usage: cvtxt check"
     end
 
-    url = "https://chivi.app/api/user/login"
-    json = `curl -s #{url} -c #{COOKIE_FILE} -F "email=#{email}" -F "upass=#{upass}"`
+    parser.on("split", "Phân tách chương tiết") do
+      split_text = true
 
-    extract_uname(json).tap do |cvuser|
-      File.write(CVUSER_FILE, cvuser)
+      parser.on("-e ENCODING", "Thông tin mã hoá ký tự") do |e|
+        SPLITTER.set_encoding(e)
+      end
+
+      parser.on("-m SPLIT_MODE", "Phương thức phân tách chương") do |m|
+        SPLITTER.split_mode = m.to_i
+      end
+
+      parser.on("--re REGEX", "Phân tách chương thông qua regular expression") do |re|
+        SPLITTER.split_re_x = Regex.new(re)
+      end
+
+      parser.unknown_args do |args|
+        files_to_split = args
+      end
     end
-  rescue err
-    puts "Thông tin đăng nhập không chính xác!".colorize.red
-    exit 1
   end
 
-  def check_login(cvuser : String)
-    if cvuser.empty? || !File.exists?(COOKIE_FILE)
-      puts "Bạn chưa đăng nhập!".colorize.red
-      exit 1
-    end
-
-    json = `curl -s https://chivi.app/api/_self -b #{COOKIE_FILE}`
-    return unless extract_uname(json) != cvuser
-
-    puts "Thông tin đăng nhập không chính xác!".colorize.red
-    exit 1
+  if login_user
+    cvuser = Login.login_user
+    puts "Xin chào, #{cvuser} :)".colorize.yellow
   end
 
-  def read_cvuser(file = "cvuser.txt")
-    return "" unless File.exists?(file)
-    File.read(file)
-  end
-end
-
-cvuser = Cvtxt.read_cvuser
-
-login_user = false
-check_login = false
-
-OptionParser.parse(ARGV) do |parser|
-  parser.on("login", "Đăng nhập") do
-    login_user = true
-    parser.banner = "Usage: cvtxt login"
+  if check_login
+    Login.check_login(cvuser)
+    puts "Thông tin đăng nhập chính xác!".colorize.yellow
   end
 
-  parser.on("check", "Kiểm tra thông tin đăng nhập") do
-    check_login = true
-    parser.banner = "Usage: cvtxt check"
+  if split_text
+    files_to_split.each { |file| SPLITTER.split(file) }
   end
-end
-
-if login_user
-  cvuser = Cvtxt.login_user
-  puts "Xin chào, #{cvuser} :)".colorize.yellow
-end
-
-if check_login
-  Cvtxt.check_login(cvuser)
-  puts "Thông tin đăng nhập chính xác!".colorize.yellow
 end

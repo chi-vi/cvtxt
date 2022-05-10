@@ -3,6 +3,7 @@
 /bin/
 /.shards/
 /tmp/
+/texts
 *.dwarf
 cookie.txt
 cvuser.txt
